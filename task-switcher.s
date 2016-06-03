@@ -7,7 +7,7 @@
 	task2_hello: .asciiz "Hello from task 2\n"
 
 	TCB_TOTAL_REGISTER_COUNT = 26
-	TCB_WORD_COUNT = TCB_TOTAL_REGISTER_COUNT + 1
+	TCB_WORD_COUNT = TCB_TOTAL_REGISTER_COUNT
 	TASK_COUNT = 3
 
 str0:   .asciiz "123"
@@ -66,16 +66,12 @@ task_tcb_address:
 	jr $ra
 
 task_switch:
-	addi $t0, $ra, 0 # $t0 represents the return address
 	la $t1, tid
 	lw $t1, 0($t1) # this represents the task ID
 
 	addi $a0, $t1, 0
 	jal task_tcb_address
 	addi $t4, $v0, 0
-
-	sw $t0, 0($t4) # store the return address
-	addi $t4, $t4, 4
 
 	addi $t9, $sp, 0
 
@@ -93,7 +89,7 @@ task_switch:
 		j task_switch_save_register_loop
 
 	task_switch_save_register_loop_exit:
-		addi $sp, $t9, 0
+		addi $sp, $t9, 108
 
 		# Figure out the next task
 		addi $t1, $t1, 1 # increment task ID
@@ -106,28 +102,39 @@ task_switch:
 
 		addi $a0, $t1, 0
 		jal task_tcb_address
-		addi $t4, $v0, 0 # $t4 is this task's control block
+		addi $t9, $v0, 0 # $t4 is this task's control block
 
-		lw $ra, 0($t4) # restore the return address
+		lw $ra, 0($t9) # restore the return address
 
-		addi $t4, $t4, 4 # offset + 8 is the start of temp registers
+		addi $t9, $t4, 4 # offset + 8 is the start of the rest of the registers
 
-		li $t6, 0 # $t6 is the number of registers restored
+		lw $2, 0($t9)
+		lw $3, 4($t9)
+		lw $4, 8($t9)
+		lw $5, 12($t9)
+		lw $6, 16($t9)
+		lw $7, 20($t9)
+		lw $8, 24($t9)
+		lw $9, 28($t9)
+		lw $10, 32($t9)
+		lw $11, 36($t9)
+		lw $12, 40($t9)
+		lw $13, 44($t9)
+		lw $14, 48($t9)
+		lw $15, 52($t9)
+		lw $16, 56($t9)
+		lw $17, 60($t9)
+		lw $18, 64($t9)
+		lw $19, 68($t9)
+		lw $20, 72($t9)
+		lw $21, 76($t9)
+		lw $22, 80($t9)
+		lw $23, 84($t9)
+		lw $24, 88($t9)
+		lw $30, 92($t9)
+		lw $26, 96($t9)
+		lw $27, 100($t9)
 
-	task_switch_restore_register_loop:
-		beq $t6, TCB_TOTAL_REGISTER_COUNT, task_switch_restore_register_loop_exit
-
-		lw $t7, 0($t4)
-		sw $t7, 0($sp)
-
-		addi $sp, $sp, 4
-		addi $t4, $t4, 4
-
-		addi $t6, $t6, 1
-		j task_switch_restore_register_loop
-
-	task_switch_restore_register_loop_exit:
-		addi $sp, $t9, 0
 		jr $ra# jump to the return address
 
 task0:
@@ -235,7 +242,7 @@ quit1:
         j ktask1
 
 do_task_switch:
-	addi $sp, $sp, -108 #  26 registers total
+	addi $sp, $sp, -104 #  26 registers total
 	sw $2, 0($sp)
 	sw $3, 4($sp)
 	sw $4, 8($sp)
@@ -259,41 +266,11 @@ do_task_switch:
 	sw $22, 80($sp)
 	sw $23, 84($sp)
 	sw $24, 88($sp)
-	sw $25, 92($sp)
+	sw $30, 92($sp)
 	sw $26, 96($sp)
 	sw $27, 100($sp)
-	sw $ra, 104($sp)
+
+	addi $sp, $sp, -4
+	sw $ra, 0($sp)
 
 	jal task_switch
-
-	lw $2, 0($sp)
-	lw $3, 4($sp)
-	lw $4, 8($sp)
-	lw $5, 12($sp)
-	lw $6, 16($sp)
-	lw $7, 20($sp)
-	lw $8, 24($sp)
-	lw $9, 28($sp)
-	lw $10, 32($sp)
-	lw $11, 36($sp)
-	lw $12, 40($sp)
-	lw $13, 44($sp)
-	lw $14, 48($sp)
-	lw $15, 52($sp)
-	lw $16, 56($sp)
-	lw $17, 60($sp)
-	lw $18, 64($sp)
-	lw $19, 68($sp)
-	lw $20, 72($sp)
-	lw $21, 76($sp)
-	lw $22, 80($sp)
-	lw $23, 84($sp)
-	lw $24, 88($sp)
-	lw $25, 92($sp)
-	lw $26, 96($sp)
-	lw $27, 100($sp)
-	lw $ra, 104($sp)
-
-	addi $sp, $sp, 108
-
-	jr $ra
