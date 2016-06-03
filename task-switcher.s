@@ -1,30 +1,38 @@
 .data
-	tcb: .space 256
+.align 2
+	tcb: .space 512
 	tid: .word 1
 	task0_hello: .asciiz "Hello from task 0\n"
 	task1_hello: .asciiz "Hello from task 1\n"
 	task2_hello: .asciiz "Hello from task 2\n"
 
+	TCB_TOTAL_REGISTER_COUNT = 26
+	TCB_WORD_COUNT = TCB_TOTAL_REGISTER_COUNT + 1
+	TASK_COUNT = 3
+
+str0:   .asciiz "123"
+str1:   .asciiz "45678"
+
 .text
 main:
 	# Initialization:
+	la $t0, tid
+	li $t1, 0
+	sw $t1, 0($t0)
+
 	li $a0, 0
 	jal task_tcb_address
 	addi $t0, $v0, 0 # $t0 is this task's control block
 
-	la $t1, task0
+	la $t1, ktask0
 	sw $t1, 0($t0)
-	li $t1, 0
-	sw $t1, 4($t0)
 
 	li $a0, 1
 	jal task_tcb_address
 	addi $t0, $v0, 0 # $t0 is this task's control block
 
-	la $t1, task1
+	la $t1, ktask1
 	sw $t1, 0($t0)
-	li $t1, 0
-	sw $t1, 4($t0)
 
 	li $a0, 2
 	jal task_tcb_address
@@ -32,10 +40,8 @@ main:
 
 	la $t1, task2
 	sw $t1, 0($t0)
-	li $t1, 0
-	sw $t1, 4($t0)
 
-	j task0
+	j ktask0
 
 exit:
 	li $v0, 10
@@ -46,7 +52,7 @@ task_tcb_address:
 
 	la $t4, tcb
 
-	li $t5, 11 # up to 9 temp registers + 1 return address + 1 word process state
+	li $t5, TCB_WORD_COUNT
 	li $t6, 4
 	mult $t5, $t6 # multiply by 4 for the word size
 	mflo $t5
@@ -61,21 +67,21 @@ task_tcb_address:
 
 task_switch:
 	addi $t0, $ra, 0 # $t0 represents the return address
-	addi $t1, $a0, 0 # $t1 represents the task ID
-	addi $t2, $a1, 0 # $t1 represents the process state
+	la $t1, tid
+	lw $t1, 0($t1) # this represents the task ID
 
 	addi $a0, $t1, 0
 	jal task_tcb_address
 	addi $t4, $v0, 0
 
-	sw $t0, 0($t4)
-	sw $t2, 4($t4)
+	sw $t0, 0($t4) # store the return address
+	addi $t4, $t4, 4
 
-	addi $t4, $t4, 8
+	addi $t9, $sp, 0
 
 	li $t6, 0
 	task_switch_save_register_loop:
-		beq $t6, 9, task_switch_save_register_loop_exit # 9 registers on the stack
+		beq $t6, TCB_TOTAL_REGISTER_COUNT, task_switch_save_register_loop_exit # save all the temp registers now
 
 		lw $t7, 0($sp)
 		sw $t7, 0($t4)
@@ -87,68 +93,29 @@ task_switch:
 		j task_switch_save_register_loop
 
 	task_switch_save_register_loop_exit:
-		li $t5, 9 # up to 8 temp registers on the stack, plus one for $ra
-		li $t6, -4
-		mult $t5, $t6 # multiply by -4 for the word size
-		mflo $t5
+		addi $sp, $t9, 0
 
-		add $sp, $sp, $t5 # reset the stack pointer
-
-		li $t6, 0 # checked task count
-
-	task_switcher_get_next_task_loop:
-		beq $t6, 3, exit
-
+		# Figure out the next task
 		addi $t1, $t1, 1 # increment task ID
-		li $t5, 3 # task count
+		li $t5, TASK_COUNT # task count
 		div $t1, $t5
 		mfhi $t1 # basically task_id % task_count -- $t3 now represents next task ID
 
-		la $t4, tcb
-
-		addi $sp, $sp, -12
-		sw $t4, 0($sp)
-		sw $t1, 4($sp)
-		sw $t6, 8($sp)
-
-		addi $a0, $t1, 0
-		jal task_tcb_address
-
-		lw $t4, 0($sp)
-		lw $t1, 4($sp)
-		lw $t6, 8($sp)
-		addi $sp, $sp, 12
-
-		addi $t4, $v0, 0
-
-		lw $t5, 4($t4) # $t5 is the task state
-		beq $t5, 0, task_switcher_get_next_task_loop_exit # 0 represents still running, so we found our desired task
-
-		addi $t6, $t6, 1
-		j task_switcher_get_next_task_loop
-
-	task_switcher_get_next_task_loop_exit:
-		addi $sp, $sp, -4
-		sw $t1, 0($sp)
-
-		addi $a0, $t1, 0
-		jal task_tcb_address
-
-		lw $t1, 0($sp)
-		addi $sp, $sp, 4
+		la $t6, tid
+		sw $t1, 0($t6)
 
 		addi $a0, $t1, 0
 		jal task_tcb_address
 		addi $t4, $v0, 0 # $t4 is this task's control block
 
-		lw $t0, 0($t4) # $t0 represents the return address
+		lw $ra, 0($t4) # restore the return address
 
-		addi $t4, $t4, 8 # offset + 8 is the start of temp registers
+		addi $t4, $t4, 4 # offset + 8 is the start of temp registers
 
 		li $t6, 0 # $t6 is the number of registers restored
 
 	task_switch_restore_register_loop:
-		beq $t6, 9, task_switch_restore_register_loop_exit
+		beq $t6, TCB_TOTAL_REGISTER_COUNT, task_switch_restore_register_loop_exit
 
 		lw $t7, 0($t4)
 		sw $t7, 0($sp)
@@ -160,8 +127,8 @@ task_switch:
 		j task_switch_restore_register_loop
 
 	task_switch_restore_register_loop_exit:
-		addi $sp, $sp, -36 # reset the stack pointer
-		jr $t0 # jump to the return address
+		addi $sp, $t9, 0
+		jr $ra# jump to the return address
 
 task0:
 	li $t1, 0
@@ -171,16 +138,7 @@ task0:
 		li $v0, 4
 		syscall
 
-		li $t8, 0
-		li $t9, 0
-
 		slt $t2, $t1, 10
-		blt $t1, 10, task0_continue
-		li $t9, 1
-		j task0_loop_next
-
-		task0_continue:
-			li $t9, 0
 
 		task0_loop_next:
 			jal do_task_switch
@@ -192,63 +150,150 @@ task1:
 	li $v0, 4
 	syscall
 
-	li $t9, 0
-	li $t8, 1
-
 	jal do_task_switch
 
-	la $a0, task1_hello
-	li $v0, 4
-	syscall
-
-	li $t9, 1
-	li $t8, 1
-	jal do_task_switch
+	j task1
 
 task2:
 	la $a0, task2_hello
 	li $v0, 4
 	syscall
 
-	li $t9, 0
-	li $t8, 2
 	jal do_task_switch
 
-	la $a0, task2_hello
-	li $v0, 4
+	j task2
+
+ktask0:
+	add  $t0, $0, $0
+	jal  do_task_switch
+	addi $t1, $0, 10
+	la   $s0, str0
+	jal do_task_switch
+beg0:
+	lb   $t2, ($s0)
+	beq  $t2, $0, quit0
+	sub  $t2, $t2, '0'
+	mult $t0, $t1
+	mflo $t0
+	add  $t0, $t0, $t2
+	jal do_task_switch
+	add  $s0, $s0, 1
+	b    beg0
+quit0:
+	jal do_task_switch
+	add  $v1, $0, $t0
+	add  $s0, $0, $v1
+	add  $a1, $0, $s0
+	jal do_task_switch
+	add  $t5, $0, $a1
+	add  $t6, $0, $t5
+	addi $s0, $0, 1
+	add  $v0, $0, $s0
+	add  $a0, $0, $t6
+	jal do_task_switch
 	syscall
+	j ktask0
 
-	li $t9, 1
-	li $t8, 2
+
+#------------ task1 ---------------
+
+ktask1:
+	add  $t0, $0, $0
+	addi $t1, $0, 10
+	la   $s0, str1
+beg1:
+	lb   $t2, ($s0)
+	beq  $t2, $0, quit1
 	jal do_task_switch
+	sub  $t2, $t2, '0'
+	mult $t0, $t1
+	addi $t8, $0, 0
+	addi $s5, $t8, 0
+	add  $t8, $s5, $s5
+	addi $t8, $0, 0
+	addi $s5, $t8, 0
+	add  $t8, $s5, $s5
+	mflo $t0
+	add  $t0, $t0, $t2
+	add  $s0, $s0, 1
+	b    beg1
+quit1:
+	add  $v1, $0, $t0
+	add  $s0, $0, $v1
+	jal do_task_switch
+	add  $a1, $0, $s0
+	add  $t5, $0, $a1
+	jal do_task_switch
+	add  $t6, $0, $t5
+	jal do_task_switch
+	addi $s0, $0, 1
+	add  $v0, $0, $s0
+	jal do_task_switch
+	add  $a0, $0, $t6
+	jal do_task_switch
+	syscall
+        j ktask1
 
 do_task_switch:
-	addi $sp, $sp, -36 # 8 temp registers, plus $ra
-	sw $t0, 0($sp)
-	sw $t1, 4($sp)
-	sw $t2, 8($sp)
-	sw $t3, 12($sp)
-	sw $t4, 16($sp)
-	sw $t5, 20($sp)
-	sw $t6, 24($sp)
-	sw $t7, 28($sp)
-	sw $ra, 32($sp)
-
-	addi $a0, $t8, 0 # task ID
-	addi $a1, $t9, 0 # task state
+	addi $sp, $sp, -108 #  26 registers total
+	sw $2, 0($sp)
+	sw $3, 4($sp)
+	sw $4, 8($sp)
+	sw $5, 12($sp)
+	sw $6, 16($sp)
+	sw $7, 20($sp)
+	sw $8, 24($sp)
+	sw $9, 28($sp)
+	sw $10, 32($sp)
+	sw $11, 36($sp)
+	sw $12, 40($sp)
+	sw $13, 44($sp)
+	sw $14, 48($sp)
+	sw $15, 52($sp)
+	sw $16, 56($sp)
+	sw $17, 60($sp)
+	sw $18, 64($sp)
+	sw $19, 68($sp)
+	sw $20, 72($sp)
+	sw $21, 76($sp)
+	sw $22, 80($sp)
+	sw $23, 84($sp)
+	sw $24, 88($sp)
+	sw $25, 92($sp)
+	sw $26, 96($sp)
+	sw $27, 100($sp)
+	sw $ra, 104($sp)
 
 	jal task_switch
 
-	lw $t0, 0($sp)
-	lw $t1, 4($sp)
-	lw $t2, 8($sp)
-	lw $t3, 12($sp)
-	lw $t4, 16($sp)
-	lw $t5, 20($sp)
-	lw $t6, 24($sp)
-	lw $t7, 28($sp)
-	lw $ra, 32($sp)
+	lw $2, 0($sp)
+	lw $3, 4($sp)
+	lw $4, 8($sp)
+	lw $5, 12($sp)
+	lw $6, 16($sp)
+	lw $7, 20($sp)
+	lw $8, 24($sp)
+	lw $9, 28($sp)
+	lw $10, 32($sp)
+	lw $11, 36($sp)
+	lw $12, 40($sp)
+	lw $13, 44($sp)
+	lw $14, 48($sp)
+	lw $15, 52($sp)
+	lw $16, 56($sp)
+	lw $17, 60($sp)
+	lw $18, 64($sp)
+	lw $19, 68($sp)
+	lw $20, 72($sp)
+	lw $21, 76($sp)
+	lw $22, 80($sp)
+	lw $23, 84($sp)
+	lw $24, 88($sp)
+	lw $25, 92($sp)
+	lw $26, 96($sp)
+	lw $27, 100($sp)
+	lw $ra, 104($sp)
 
-	addi $sp, $sp, 36
+	addi $sp, $sp, 108
 
 	jr $ra
